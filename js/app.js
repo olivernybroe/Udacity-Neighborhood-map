@@ -238,6 +238,12 @@ window.initMap = function initMap() {
     });
 };
 
+window.gm_authFailure = function() {
+    // remove the map div or maybe call another API to load map
+    // maybe display a useful message to the user
+    alert('Failed loading Google Maps.');
+};
+
 /**
  * Grocery Store model
  *
@@ -320,7 +326,7 @@ class GroceryStore {
                 <div class="card border-0" style="width: 18rem;">
                   <div class="card-body">
                     <h5 class="card-title">${this.name}</h5>
-                    <p class="card-text">${this.location.address}, ${this.location.city}, ${this.location.cc}</p>
+                    <p class="card-text">${this.location.address || "Unknown address"}, ${this.location.city}, ${this.location.cc}</p>
                   </div>
                 </div>`
         });
