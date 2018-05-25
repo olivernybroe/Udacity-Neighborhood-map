@@ -1,3 +1,4 @@
+'use strict';
 let map;
 let startLocation = {lat: 55.70586, lng: 12.51028};
 
@@ -5,7 +6,7 @@ let startLocation = {lat: 55.70586, lng: 12.51028};
  * Defines our method for constructing the google map.
  * This method is automatically called from Google Maps js script.
  */
-window.initMap = function initMap() {
+window.initMap = function initMap(listener) {
     // Defines the look and feel of our map.
     map = new google.maps.Map(document.getElementById('map'), {
         center: startLocation,
@@ -222,23 +223,27 @@ window.initMap = function initMap() {
 
 
     // Draw grocery stores when map is loaded.
-    viewModel.groceryStores.subscribe(function(groceryStores) {
-        if(groceryStores == null) {
+    viewModel.groceryStoresFiltered.subscribe((groceryStores) => {
+        if(groceryStores === null) {
             return;
         }
-        groceryStores.forEach(function (groceryStore) {
+        let bounds = new google.maps.LatLngBounds();
+        groceryStores.forEach(groceryStore => {
             groceryStore.draw(map);
+            bounds.extend(groceryStore.marker.position);
         });
+        map.fitBounds(bounds);
+
     });
-    viewModel.groceryStores.valueHasMutated();
+    viewModel.search();
 
     // Close info Windows if clicking on map.
-    map.addListener('click', function () {
-        viewModel.closeInfoWindows();
+    map.addListener('click', () => {
+        return viewModel.closeInfoWindows();
     });
 };
 
-window.gm_authFailure = function() {
+window.gm_authFailure = () => {
     // remove the map div or maybe call another API to load map
     // maybe display a useful message to the user
     alert('Failed loading Google Maps.');
@@ -266,7 +271,8 @@ class GroceryStore {
      */
     draw(map) {
         // Do not draw marker if already drawn.
-        if(this.marker != null) {
+        if(this.marker !== null) {
+            this.marker.setVisible(true);
             return this;
         }
 
@@ -274,7 +280,7 @@ class GroceryStore {
         this.infoWindow = this.createInfoWindow();
 
         const self = this;
-        this.marker.addListener('click', function() {
+        this.marker.addListener('click', () => {
             self.click();
         });
         return this;
@@ -310,7 +316,7 @@ class GroceryStore {
     animate() {
         let self = this;
         self.marker.setAnimation(google.maps.Animation.BOUNCE);
-        setTimeout(function(){
+        setTimeout(() => {
             self.marker.setAnimation(null);
         }, 750);
     }
@@ -326,7 +332,7 @@ class GroceryStore {
                 <div class="card border-0" style="width: 18rem;">
                   <div class="card-body">
                     <h5 class="card-title">${this.name}</h5>
-                    <p class="card-text">${this.location.address || "Unknown address"}, ${this.location.city}, ${this.location.cc}</p>
+                    <p class="card-text">${this.location.address || "Unknown address"}, ${this.location.city || "Unknown city"}, ${this.location.cc || "Uknown country"}</p>
                   </div>
                 </div>`
         });
@@ -356,9 +362,7 @@ class GroceryStore {
             },
             dataType: "json"
         }).then(function (data) {
-            return data.response.venues.map(function(venue) {
-                return GroceryStore.fromJson(venue);
-            });
+            return data.response.venues.map(venue => GroceryStore.fromJson(venue));
         });
     }
 
@@ -374,7 +378,7 @@ class GroceryStore {
         return new GroceryStore(
             json.name,
             json.location
-        )
+        );
     }
 
     /**
@@ -384,9 +388,7 @@ class GroceryStore {
      * @returns {Promise<GroceryStore[]>}
      */
     static async findMultiple(ids) {
-        let promises = ids.map(function (id) {
-            return GroceryStore.find(id);
-        });
+        let promises = ids.map(id => GroceryStore.find(id));
 
         return Promise.all(promises);
     }
@@ -408,9 +410,7 @@ class GroceryStore {
                 v: "20180323"
             },
             dataType: "json"
-        }).then(function (data) {
-            return GroceryStore.fromJson(data.response.venue);
-        });
+        }).then(data => GroceryStore.fromJson(data.response.venue));
     }
 }
 
@@ -425,44 +425,52 @@ class ViewModel {
 
         this.groceryStores = ko.observableArray();
 
+        this.groceryStoresFiltered = ko.computed(() =>
+            ko.utils.arrayFilter(this.groceryStores(), (groceryStore) =>
+                groceryStore.name.toLowerCase().includes(this.searchField().toLowerCase())
+            ));
+
         /**
          * Cleans the map before new grocery stores are drawn.
          */
-        this.groceryStores.subscribe(function() {
+        this.groceryStoresFiltered.subscribe(() => {
             self.closeInfoWindows();
-            self.destroyMarkers();
+            self.hideMarkers();
         }, null, "beforeChange");
 
-        /**
-         * Defines the observable which updates our grocery stores.
-         */
-        this.updateGroceryStores = ko.computed(function() {
-            console.log("searching", self.searchField());
-            GroceryStore.search(startLocation.lat, startLocation.lng, self.searchField()).catch(reason => {
-                alert("failed fetching grocery stores from FourSquare.");
-            }).then((data) => {
-                self.groceryStores(data);
-            });
-        }, this).extend({ deferred: true });
+        // Searches the API so we have some initial data.
+        this.searchRemote();
     }
 
     /**
      * Makes a search with the value from search field. (Used for manually trigger search)
      */
     search() {
-        this.updateGroceryStores.valueHasMutated();
+        this.searchField.valueHasMutated();
+    }
+
+    /**
+     * Searches the API for grocery stores.
+     */
+    searchRemote() {
+        console.log("searching", self.searchField());
+        GroceryStore.search(startLocation.lat, startLocation.lng, self.searchField()).catch(() => {
+            alert("failed fetching grocery stores from FourSquare.");
+        }).then((data) => {
+            self.groceryStores(data);
+        });
     }
 
     /**
      * Removes all markers linked to grocery stores.
      */
-    destroyMarkers() {
-        if(this.groceryStores == null) {
+    hideMarkers() {
+        if(this.groceryStores === null) {
             return;
         }
-        this.groceryStores().forEach(function (groceryStore) {
-            if(groceryStore.marker != null) {
-                groceryStore.marker.setMap(null);
+        this.groceryStores().forEach(groceryStore => {
+            if(groceryStore.marker !== null) {
+                groceryStore.marker.setVisible(false);
             }
         });
     }
@@ -471,11 +479,11 @@ class ViewModel {
      * Closes all the info windows for the grocery stores.
      */
     closeInfoWindows() {
-        if(this.groceryStores == null) {
+        if(this.groceryStores === null) {
             return;
         }
-        this.groceryStores().forEach(function (groceryStore) {
-            if(groceryStore.infoWindow != null) {
+        this.groceryStores().forEach(groceryStore => {
+            if(groceryStore.infoWindow !== null) {
                 groceryStore.infoWindow.close();
             }
         });
@@ -491,7 +499,7 @@ let viewModel = new ViewModel();
  * @returns {Promise<array>}
  */
 function ajax(options) {
-    return new Promise(function (resolve, reject) {
+    return new Promise((resolve, reject) => {
         $.ajax(options).done(resolve).fail(reject);
     });
 }

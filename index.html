@@ -22,7 +22,7 @@
                             <button class="btn btn-outline-success" type="submit" data-bind="click: search">Search</button>
                         </div>
                     </div>
-                    <ul class="navbar-nav w-100" data-bind="foreach: groceryStores">
+                    <ul class="navbar-nav w-100" data-bind="foreach: groceryStoresFiltered">
                         <li class="nav-item w-100">
                             <a class="nav-link" href="#" data-bind="text: name, click: $data.click"></a>
                         </li>
